@@ -1,0 +1,6 @@
+{
+  "name": "APSR Review PDF Generator",
+  "description": "A tool to convert raw text from Editorial Manager into a formatted PDF for APSR reviewers, including ratings tables and comments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
