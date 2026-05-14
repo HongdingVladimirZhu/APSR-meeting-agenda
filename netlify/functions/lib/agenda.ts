@@ -41,6 +41,9 @@ export const readJsonBody = (body: string | null) => {
   }
 };
 
+export const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : 'Unknown error';
+
 export const validatePassword = (password: unknown) => {
   const expectedPassword = process.env.AGENDA_PASSWORD;
   return Boolean(expectedPassword && typeof password === 'string' && password === expectedPassword);
@@ -52,10 +55,7 @@ export const defaultAgenda: AgendaData = { meetings: [] };
 
 const localAgendaPath = path.join(process.cwd(), '.netlify', 'agenda-local.json');
 
-const canUseLocalFallback = () =>
-  process.env.NETLIFY_DEV === 'true' ||
-  process.env.NETLIFY_LOCAL === 'true' ||
-  process.env.NODE_ENV !== 'production';
+const canUseLocalFallback = () => process.env.NETLIFY_DEV === 'true';
 
 const isMissingBlobsEnvironment = (error: unknown) =>
   error instanceof Error && error.name === 'MissingBlobsEnvironmentError';

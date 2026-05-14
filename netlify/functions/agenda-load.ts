@@ -1,5 +1,5 @@
 import type { Handler } from '@netlify/functions';
-import { jsonResponse, loadAgenda, readJsonBody, validatePassword } from './lib/agenda';
+import { getErrorMessage, jsonResponse, loadAgenda, readJsonBody, validatePassword } from './lib/agenda';
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -15,6 +15,14 @@ export const handler: Handler = async (event) => {
     return jsonResponse(401, { error: 'Incorrect password' });
   }
 
-  const agenda = await loadAgenda();
-  return jsonResponse(200, { agenda });
+  try {
+    const agenda = await loadAgenda();
+    return jsonResponse(200, { agenda });
+  } catch (error) {
+    console.error('Failed to load agenda from Netlify Blobs:', error);
+    return jsonResponse(500, {
+      error: 'Failed to load agenda data from Netlify Blobs.',
+      detail: getErrorMessage(error),
+    });
+  }
 };
