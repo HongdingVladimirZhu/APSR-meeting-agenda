@@ -1,5 +1,12 @@
 import type { Handler } from '@netlify/functions';
-import { getErrorMessage, jsonResponse, loadAgenda, readJsonBody, validatePassword } from './lib/agenda';
+import {
+  connectBlobs,
+  getErrorMessage,
+  jsonResponse,
+  loadAgenda,
+  readJsonBody,
+  validatePassword,
+} from './lib/agenda';
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -16,6 +23,7 @@ export const handler: Handler = async (event) => {
   }
 
   try {
+    connectBlobs(event);
     const agenda = await loadAgenda();
     return jsonResponse(200, { agenda });
   } catch (error) {

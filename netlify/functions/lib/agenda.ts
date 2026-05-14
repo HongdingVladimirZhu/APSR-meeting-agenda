@@ -1,4 +1,5 @@
-import { getStore } from '@netlify/blobs';
+import { connectLambda, getStore } from '@netlify/blobs';
+import type { HandlerEvent } from '@netlify/functions';
 
 export type Manuscript = {
   id: string;
@@ -50,6 +51,13 @@ export const validatePassword = (password: unknown) => {
 export const getAgendaStore = () => getStore('meeting-agenda');
 
 export const defaultAgenda: AgendaData = { meetings: [] };
+
+export const connectBlobs = (event: HandlerEvent) => {
+  const lambdaEvent = event as HandlerEvent & { blobs?: string };
+  if (lambdaEvent.blobs) {
+    connectLambda({ blobs: lambdaEvent.blobs, headers: event.headers });
+  }
+};
 
 export const loadAgenda = async (): Promise<AgendaData> => {
   const store = getAgendaStore();

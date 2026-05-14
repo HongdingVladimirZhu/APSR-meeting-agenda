@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions';
 import {
+  connectBlobs,
   getErrorMessage,
   isAgendaData,
   jsonResponse,
@@ -27,6 +28,7 @@ export const handler: Handler = async (event) => {
   }
 
   try {
+    connectBlobs(event);
     await saveAgenda(body.agenda);
     return jsonResponse(200, { agenda: body.agenda });
   } catch (error) {
