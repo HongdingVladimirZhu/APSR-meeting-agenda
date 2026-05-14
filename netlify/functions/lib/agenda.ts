@@ -1,6 +1,4 @@
 import { getStore } from '@netlify/blobs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 
 export type Manuscript = {
   id: string;
@@ -53,61 +51,18 @@ export const getAgendaStore = () => getStore('meeting-agenda');
 
 export const defaultAgenda: AgendaData = { meetings: [] };
 
-const localAgendaPath = path.join(process.cwd(), '.netlify', 'agenda-local.json');
-
-const canUseLocalFallback = () => process.env.NETLIFY_DEV === 'true';
-
-const isMissingBlobsEnvironment = (error: unknown) =>
-  error instanceof Error && error.name === 'MissingBlobsEnvironmentError';
-
-const loadLocalAgenda = async (): Promise<AgendaData> => {
-  try {
-    const content = await readFile(localAgendaPath, 'utf8');
-    const agenda = JSON.parse(content);
-    if (isAgendaData(agenda)) {
-      return agenda;
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn('Could not read local agenda fallback:', error);
-    }
-  }
-
-  return defaultAgenda;
-};
-
-const saveLocalAgenda = async (agenda: AgendaData) => {
-  await mkdir(path.dirname(localAgendaPath), { recursive: true });
-  await writeFile(localAgendaPath, `${JSON.stringify(agenda, null, 2)}\n`, 'utf8');
-};
-
 export const loadAgenda = async (): Promise<AgendaData> => {
-  try {
-    const store = getAgendaStore();
-    const agenda = await store.get(agendaKey, { type: 'json' });
-    if (!agenda || typeof agenda !== 'object' || !Array.isArray((agenda as AgendaData).meetings)) {
-      return defaultAgenda;
-    }
-    return agenda as AgendaData;
-  } catch (error) {
-    if (canUseLocalFallback() && isMissingBlobsEnvironment(error)) {
-      return loadLocalAgenda();
-    }
-    throw error;
+  const store = getAgendaStore();
+  const agenda = await store.get(agendaKey, { type: 'json' });
+  if (!agenda || typeof agenda !== 'object' || !Array.isArray((agenda as AgendaData).meetings)) {
+    return defaultAgenda;
   }
+  return agenda as AgendaData;
 };
 
 export const saveAgenda = async (agenda: AgendaData) => {
-  try {
-    const store = getAgendaStore();
-    await store.setJSON(agendaKey, agenda);
-  } catch (error) {
-    if (canUseLocalFallback() && isMissingBlobsEnvironment(error)) {
-      await saveLocalAgenda(agenda);
-      return;
-    }
-    throw error;
-  }
+  const store = getAgendaStore();
+  await store.setJSON(agendaKey, agenda);
 };
 
 export const isAgendaData = (value: unknown): value is AgendaData => {
