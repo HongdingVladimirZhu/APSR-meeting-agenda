@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarPlus, HelpCircle, Languages, Lock, Plus, Save, Trash2, X } from 'lucide-react';
+import { CalendarPlus, Clock3, HelpCircle, Languages, Lock, Plus, Save, Trash2, X } from 'lucide-react';
 import ReviewZipGenerator from './ReviewZipGenerator';
 
 type Manuscript = {
@@ -34,17 +34,132 @@ const createId = (prefix: string) =>
 
 const nowIso = () => new Date().toISOString();
 
-const toDateTimeLocalValue = (value: string) => {
+const EASTERN_TIME_ZONE = 'America/New_York';
+const REFERENCE_TIME_ZONE_KEY = 'agenda-reference-time-zone';
+
+const fallbackTimeZones = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'America/Mexico_City',
+  'America/Sao_Paulo',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Warsaw',
+  'Europe/Madrid',
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+
+const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const intlWithSupportedValues = Intl as typeof Intl & {
+  supportedValuesOf?: (key: 'timeZone') => string[];
+};
+const timeZoneOptions = Array.from(
+  new Set([
+    browserTimeZone,
+    EASTERN_TIME_ZONE,
+    'UTC',
+    ...(intlWithSupportedValues.supportedValuesOf?.('timeZone') ?? fallbackTimeZones),
+  ]),
+).sort();
+
+const getInitialReferenceTimeZone = () => {
+  const stored = window.localStorage.getItem(REFERENCE_TIME_ZONE_KEY);
+  return stored && timeZoneOptions.includes(stored) ? stored : browserTimeZone;
+};
+
+type ZonedDateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const zonedFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+const getZonedFormatter = (timeZone: string) => {
+  const cached = zonedFormatterCache.get(timeZone);
+  if (cached) return cached;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  zonedFormatterCache.set(timeZone, formatter);
+  return formatter;
+};
+
+const getZonedParts = (date: Date, timeZone: string): ZonedDateTimeParts => {
+  const values = Object.fromEntries(
+    getZonedFormatter(timeZone)
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
+  );
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: values.hour,
+    minute: values.minute,
+    second: values.second,
+  };
+};
+
+const padDateTimePart = (value: number) => String(value).padStart(2, '0');
+
+const toZonedDateTimeLocalValue = (value: string, timeZone: string) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  const parts = getZonedParts(date, timeZone);
+  return `${parts.year}-${padDateTimePart(parts.month)}-${padDateTimePart(parts.day)}T${padDateTimePart(parts.hour)}:${padDateTimePart(parts.minute)}`;
 };
 
-const fromDateTimeLocalValue = (value: string) => {
+const getTimeZoneOffsetMs = (date: Date, timeZone: string) => {
+  const parts = getZonedParts(date, timeZone);
+  const representedAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return representedAsUtc - date.getTime();
+};
+
+const fromZonedDateTimeLocalValue = (value: string, timeZone: string) => {
   if (!value) return '';
-  return new Date(value).toISOString();
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return '';
+
+  const [, year, month, day, hour, minute] = match.map(Number);
+  const wallClockAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+  let instant = wallClockAsUtc;
+
+  // Recalculate because the first estimate can cross a daylight-saving boundary.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    instant = wallClockAsUtc - getTimeZoneOffsetMs(new Date(instant), timeZone);
+  }
+
+  return new Date(instant).toISOString();
 };
 
 async function callFunction<T>(path: string, password: string, body: Record<string, unknown> = {}): Promise<T> {
@@ -89,6 +204,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: 'No upcoming meetings.',
     noPast: 'No past meetings.',
     meetingTime: 'Meeting time',
+    easternTime: 'US Eastern Time',
+    referenceTime: 'Reference time',
+    referenceTimeZone: 'Reference time zone',
+    timeZoneHint: 'Edit either time; both stay synchronized.',
     manuscript: 'Manuscript',
     delete: 'Delete',
     noManuscripts: 'No manuscripts yet.',
@@ -98,7 +217,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: 'Discussion notes',
     help: 'Help',
     hideHelp: 'Hide help',
-    help1: 'Add a meeting, set its time, then add one or more manuscripts.',
+    help1: 'Add a meeting, set its time in US Eastern or your reference time zone, then add one or more manuscripts.',
     help2: 'Use the notes area for discussion points, decisions, and follow-up tasks.',
     help3: 'Save writes the agenda to Netlify Blobs. Cancel discards unsaved edits.',
     help4: 'Deleted meetings and manuscripts are hidden here but kept in stored JSON with deleted: true.',
@@ -122,6 +241,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: 'Brak nadchodzących spotkań.',
     noPast: 'Brak minionych spotkań.',
     meetingTime: 'Czas spotkania',
+    easternTime: 'Czas wschodni USA',
+    referenceTime: 'Czas referencyjny',
+    referenceTimeZone: 'Referencyjna strefa czasowa',
+    timeZoneHint: 'Edytuj dowolny czas; oba pozostaną zsynchronizowane.',
     manuscript: 'Manuskrypt',
     delete: 'Usuń',
     noManuscripts: 'Nie ma jeszcze manuskryptów.',
@@ -131,7 +254,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: 'Notatki z dyskusji',
     help: 'Pomoc',
     hideHelp: 'Ukryj pomoc',
-    help1: 'Dodaj spotkanie, ustaw czas, a następnie dodaj jeden lub więcej manuskryptów.',
+    help1: 'Dodaj spotkanie, ustaw czas w strefie wschodniej USA lub referencyjnej, a następnie dodaj manuskrypty.',
     help2: 'Użyj pola notatek na punkty dyskusji, decyzje i dalsze zadania.',
     help3: 'Zapis zapisuje agendę w Netlify Blobs. Anuluj odrzuca niezapisane zmiany.',
     help4: 'Usunięte spotkania i manuskrypty są ukryte tutaj, ale pozostają w JSON z deleted: true.',
@@ -155,6 +278,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: 'No hay reuniones próximas.',
     noPast: 'No hay reuniones pasadas.',
     meetingTime: 'Hora de la reunión',
+    easternTime: 'Hora del este de EE. UU.',
+    referenceTime: 'Hora de referencia',
+    referenceTimeZone: 'Zona horaria de referencia',
+    timeZoneHint: 'Edita cualquiera de las horas; ambas se sincronizan.',
     manuscript: 'Manuscrito',
     delete: 'Eliminar',
     noManuscripts: 'Aún no hay manuscritos.',
@@ -164,7 +291,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: 'Notas de discusión',
     help: 'Ayuda',
     hideHelp: 'Ocultar ayuda',
-    help1: 'Añade una reunión, fija la hora y luego añade uno o más manuscritos.',
+    help1: 'Añade una reunión, fija la hora del este de EE. UU. o la de referencia y luego añade manuscritos.',
     help2: 'Usa el área de notas para puntos de discusión, decisiones y tareas de seguimiento.',
     help3: 'Guardar escribe la agenda en Netlify Blobs. Cancelar descarta cambios sin guardar.',
     help4: 'Las reuniones y manuscritos eliminados se ocultan aquí, pero quedan en el JSON con deleted: true.',
@@ -188,6 +315,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: 'No hi ha reunions properes.',
     noPast: 'No hi ha reunions passades.',
     meetingTime: 'Hora de la reunió',
+    easternTime: 'Hora de l’est dels EUA',
+    referenceTime: 'Hora de referència',
+    referenceTimeZone: 'Fus horari de referència',
+    timeZoneHint: 'Edita qualsevol hora; totes dues es mantenen sincronitzades.',
     manuscript: 'Manuscrit',
     delete: 'Suprimeix',
     noManuscripts: 'Encara no hi ha manuscrits.',
@@ -197,7 +328,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: 'Notes de discussió',
     help: 'Ajuda',
     hideHelp: "Amaga l'ajuda",
-    help1: 'Afegeix una reunió, defineix-ne l’hora i després afegeix un o més manuscrits.',
+    help1: 'Afegeix una reunió, defineix l’hora de l’est dels EUA o la de referència i després afegeix manuscrits.',
     help2: 'Fes servir les notes per als punts de discussió, decisions i tasques de seguiment.',
     help3: 'Desa escriu l’agenda a Netlify Blobs. Cancel·la descarta els canvis no desats.',
     help4: 'Les reunions i manuscrits suprimits s’oculten aquí, però es conserven al JSON amb deleted: true.',
@@ -221,6 +352,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: 'Aucune réunion à venir.',
     noPast: 'Aucune réunion passée.',
     meetingTime: 'Heure de la réunion',
+    easternTime: 'Heure de l’Est américain',
+    referenceTime: 'Heure de référence',
+    referenceTimeZone: 'Fuseau horaire de référence',
+    timeZoneHint: 'Modifiez l’une des heures ; les deux restent synchronisées.',
     manuscript: 'Manuscrit',
     delete: 'Supprimer',
     noManuscripts: 'Aucun manuscrit pour le moment.',
@@ -230,7 +365,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: 'Notes de discussion',
     help: 'Aide',
     hideHelp: "Masquer l'aide",
-    help1: 'Ajoutez une réunion, définissez son heure, puis ajoutez un ou plusieurs manuscrits.',
+    help1: 'Ajoutez une réunion, réglez l’heure de l’Est américain ou l’heure de référence, puis ajoutez des manuscrits.',
     help2: 'Utilisez les notes pour les points de discussion, décisions et suivis.',
     help3: 'Enregistrer écrit l’agenda dans Netlify Blobs. Annuler ignore les modifications non enregistrées.',
     help4: 'Les réunions et manuscrits supprimés sont masqués ici, mais conservés dans le JSON avec deleted: true.',
@@ -254,6 +389,10 @@ const copy: Record<Language, Record<string, string>> = {
     noUpcoming: '暂无即将进行的会议。',
     noPast: '暂无过去会议。',
     meetingTime: '会议时间',
+    easternTime: '美国东部时间',
+    referenceTime: '参考时间',
+    referenceTimeZone: '参考时区',
+    timeZoneHint: '修改任一时间，两个时间会同步更新。',
     manuscript: '手稿',
     delete: '删除',
     noManuscripts: '还没有手稿。',
@@ -263,7 +402,7 @@ const copy: Record<Language, Record<string, string>> = {
     notesPlaceholder: '讨论备注',
     help: '帮助',
     hideHelp: '收起帮助',
-    help1: '添加一个会议，设置会议时间，然后加入一篇或多篇手稿。',
+    help1: '添加会议后，可用美国东部时间或参考时区设置时间，然后加入一篇或多篇手稿。',
     help2: '在备注框记录讨论要点、决定和后续事项。',
     help3: '保存会把议程写入 Netlify Blobs；取消会放弃未保存的修改。',
     help4: '删除的会议和手稿会在界面中隐藏，但会以 deleted: true 保留在 JSON 中。',
@@ -273,6 +412,7 @@ const copy: Record<Language, Record<string, string>> = {
 
 function AgendaApp() {
   const [language, setLanguage] = useState<Language>('en');
+  const [referenceTimeZone, setReferenceTimeZone] = useState(getInitialReferenceTimeZone);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [authenticatedPassword, setAuthenticatedPassword] = useState('');
@@ -330,6 +470,23 @@ function AgendaApp() {
       ),
     }));
     setSaveState('idle');
+  };
+
+  const updateReferenceTimeZone = (timeZone: string) => {
+    setReferenceTimeZone(timeZone);
+    window.localStorage.setItem(REFERENCE_TIME_ZONE_KEY, timeZone);
+  };
+
+  const updateMeetingTime = (meetingId: string, value: string, timeZone: string) => {
+    const nextTime = fromZonedDateTimeLocalValue(value, timeZone);
+    if (!nextTime) return;
+
+    const timestamp = nowIso();
+    updateMeeting(meetingId, (meeting) => ({
+      ...meeting,
+      time: nextTime,
+      updatedAt: timestamp,
+    }));
   };
 
   const addMeeting = () => {
@@ -489,24 +646,40 @@ function AgendaApp() {
       ) : (
         meetings.map((meeting) => (
           <article key={meeting.id} className="border-2 border-gray-300 bg-[#fcfbf9] p-4 shadow-md paper-shadow">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <label className="block">
-                <span className="text-sm font-semibold text-gray-700">{t.meetingTime}</span>
-                <input
-                  type="datetime-local"
-                  value={toDateTimeLocalValue(meeting.time)}
-                  onChange={(event) => {
-                    const timestamp = nowIso();
-                    updateMeeting(meeting.id, (current) => ({
-                      ...current,
-                      time: fromDateTimeLocalValue(event.target.value),
-                      updatedAt: timestamp,
-                    }));
-                  }}
-                  className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 outline-none focus:border-gray-800 sm:w-72"
-                />
-              </label>
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex-1">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-gray-700">{t.easternTime}</span>
+                    <span className="ml-2 text-xs text-gray-500">America/New_York</span>
+                    <input
+                      type="datetime-local"
+                      value={toZonedDateTimeLocalValue(meeting.time, EASTERN_TIME_ZONE)}
+                      onChange={(event) =>
+                        updateMeetingTime(meeting.id, event.target.value, EASTERN_TIME_ZONE)
+                      }
+                      className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 outline-none focus:border-gray-800"
+                    />
+                  </label>
+                  <label className="block border-l-0 border-gray-300 sm:border-l sm:pl-3">
+                    <span className="text-sm font-semibold text-gray-700">{t.referenceTime}</span>
+                    <span className="ml-2 text-xs text-gray-500">{referenceTimeZone}</span>
+                    <input
+                      type="datetime-local"
+                      value={toZonedDateTimeLocalValue(meeting.time, referenceTimeZone)}
+                      onChange={(event) =>
+                        updateMeetingTime(meeting.id, event.target.value, referenceTimeZone)
+                      }
+                      className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 outline-none focus:border-gray-800"
+                    />
+                  </label>
+                </div>
+                <p className="mt-2 flex items-center gap-1 text-xs italic text-gray-500">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  {t.timeZoneHint}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
                 <button
                   type="button"
                   onClick={() => addManuscript(meeting.id)}
@@ -607,6 +780,22 @@ function AgendaApp() {
                 {(Object.keys(languageNames) as Language[]).map((code) => (
                   <option key={code} value={code}>
                     {languageNames[code]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-flex min-w-0 items-center gap-2 rounded border border-gray-400 bg-[#fcfbf9] px-3 py-2 text-sm font-semibold shadow-sm">
+              <Clock3 className="h-4 w-4 shrink-0" />
+              <span className="sr-only">{t.referenceTimeZone}</span>
+              <select
+                value={referenceTimeZone}
+                onChange={(event) => updateReferenceTimeZone(event.target.value)}
+                className="max-w-52 min-w-0 bg-transparent text-sm outline-none"
+                title={t.referenceTimeZone}
+              >
+                {timeZoneOptions.map((timeZone) => (
+                  <option key={timeZone} value={timeZone}>
+                    {timeZone}
                   </option>
                 ))}
               </select>
