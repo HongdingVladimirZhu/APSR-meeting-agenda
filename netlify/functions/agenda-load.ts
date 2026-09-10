@@ -4,6 +4,7 @@ import {
   getErrorMessage,
   jsonResponse,
   loadAgenda,
+  parseAgendaPod,
   readJsonBody,
   validatePassword,
 } from './lib/agenda';
@@ -18,14 +19,19 @@ export const handler: Handler = async (event) => {
     return jsonResponse(400, { error: 'Invalid JSON body' });
   }
 
-  if (!validatePassword(body.password)) {
+  const pod = parseAgendaPod(body.pod);
+  if (!pod) {
+    return jsonResponse(400, { error: 'Invalid agenda portal' });
+  }
+
+  if (!validatePassword(body.password, pod)) {
     return jsonResponse(401, { error: 'Incorrect password' });
   }
 
   try {
     connectBlobs(event);
-    const agenda = await loadAgenda();
-    return jsonResponse(200, { agenda });
+    const agenda = await loadAgenda(pod);
+    return jsonResponse(200, { agenda, pod });
   } catch (error) {
     console.error('Failed to load agenda from Netlify Blobs:', error);
     return jsonResponse(500, {

@@ -1,5 +1,11 @@
 import type { Handler } from '@netlify/functions';
-import { jsonResponse, readJsonBody, validatePassword } from './lib/agenda';
+import {
+  getPasswordVariableName,
+  jsonResponse,
+  parseAgendaPod,
+  readJsonBody,
+  validatePassword,
+} from './lib/agenda';
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -11,13 +17,19 @@ export const handler: Handler = async (event) => {
     return jsonResponse(400, { error: 'Invalid JSON body' });
   }
 
-  if (!process.env.AGENDA_PASSWORD) {
-    return jsonResponse(500, { error: 'AGENDA_PASSWORD is not configured' });
+  const pod = parseAgendaPod(body.pod);
+  if (!pod) {
+    return jsonResponse(400, { error: 'Invalid agenda portal' });
   }
 
-  if (!validatePassword(body.password)) {
+  const passwordVariableName = getPasswordVariableName(pod);
+  if (!process.env[passwordVariableName]) {
+    return jsonResponse(500, { error: `${passwordVariableName} is not configured` });
+  }
+
+  if (!validatePassword(body.password, pod)) {
     return jsonResponse(401, { error: 'Incorrect password' });
   }
 
-  return jsonResponse(200, { ok: true });
+  return jsonResponse(200, { ok: true, pod });
 };

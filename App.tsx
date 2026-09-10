@@ -26,6 +26,7 @@ type AgendaData = {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type Language = 'en' | 'pl' | 'es' | 'ca' | 'fr' | 'zh-CN';
+type AgendaPod = 'ir' | 'cp';
 
 const emptyAgenda: AgendaData = { meetings: [] };
 
@@ -162,11 +163,16 @@ const fromZonedDateTimeLocalValue = (value: string, timeZone: string) => {
   return new Date(instant).toISOString();
 };
 
-async function callFunction<T>(path: string, password: string, body: Record<string, unknown> = {}): Promise<T> {
+async function callFunction<T>(
+  path: string,
+  password: string,
+  pod: AgendaPod,
+  body: Record<string, unknown> = {},
+): Promise<T> {
   const response = await fetch(`/.netlify/functions/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, ...body }),
+    body: JSON.stringify({ password, pod, ...body }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -190,6 +196,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: "Let's Discuss A Manuscript!",
     subtitle: 'For exclusive use by APSR editors coordinating manuscript discussion agendas.',
     passwordPrompt: 'Enter the shared password to view and edit.',
+    selectPod: 'Agenda portal',
+    choosePod: 'Choose a portal',
+    switchPod: 'Switch portal',
     password: 'Password',
     openAgenda: 'Open agenda',
     checking: 'Checking...',
@@ -227,6 +236,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: 'Porozmawiajmy o manuskrypcie!',
     subtitle: 'Do wyłącznego użytku redaktorów APSR koordynujących agendy dyskusji nad manuskryptami.',
     passwordPrompt: 'Wpisz wspólne hasło, aby przeglądać i edytować.',
+    selectPod: 'Portal agendy',
+    choosePod: 'Wybierz portal',
+    switchPod: 'Zmień portal',
     password: 'Hasło',
     openAgenda: 'Otwórz agendę',
     checking: 'Sprawdzanie...',
@@ -264,6 +276,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: '¡Hablemos de un manuscrito!',
     subtitle: 'Para uso exclusivo de editores de APSR que coordinan agendas de discusión de manuscritos.',
     passwordPrompt: 'Introduce la contraseña compartida para ver y editar.',
+    selectPod: 'Portal de agenda',
+    choosePod: 'Elige un portal',
+    switchPod: 'Cambiar de portal',
     password: 'Contraseña',
     openAgenda: 'Abrir agenda',
     checking: 'Comprobando...',
@@ -301,6 +316,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: "Parlem d'un manuscrit!",
     subtitle: "Per a l'ús exclusiu dels editors d'APSR que coordinen agendes de discussió de manuscrits.",
     passwordPrompt: 'Introdueix la contrasenya compartida per veure i editar.',
+    selectPod: "Portal de l'agenda",
+    choosePod: 'Tria un portal',
+    switchPod: 'Canvia de portal',
     password: 'Contrasenya',
     openAgenda: "Obre l'agenda",
     checking: 'Comprovant...',
@@ -338,6 +356,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: 'Discutons un manuscrit !',
     subtitle: "Réservé exclusivement aux éditeurs d'APSR qui coordonnent les ordres du jour de discussion des manuscrits.",
     passwordPrompt: 'Saisissez le mot de passe partagé pour consulter et modifier.',
+    selectPod: "Portail de l'agenda",
+    choosePod: 'Choisir un portail',
+    switchPod: 'Changer de portail',
     password: 'Mot de passe',
     openAgenda: "Ouvrir l'agenda",
     checking: 'Vérification...',
@@ -375,6 +396,9 @@ const copy: Record<Language, Record<string, string>> = {
     appTitle: '我们来讨论一篇手稿！',
     subtitle: '仅供 APSR 编辑协调手稿讨论议程时使用。',
     passwordPrompt: '输入共享密码后即可查看和编辑。',
+    selectPod: '议程门户',
+    choosePod: '选择门户',
+    switchPod: '切换门户',
     password: '密码',
     openAgenda: '进入议程',
     checking: '验证中...',
@@ -414,6 +438,8 @@ function AgendaApp() {
   const [language, setLanguage] = useState<Language>('en');
   const [referenceTimeZone, setReferenceTimeZone] = useState(getInitialReferenceTimeZone);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [selectedPod, setSelectedPod] = useState<AgendaPod | ''>('');
+  const [authenticatedPod, setAuthenticatedPod] = useState<AgendaPod | null>(null);
   const [password, setPassword] = useState('');
   const [authenticatedPassword, setAuthenticatedPassword] = useState('');
   const [agenda, setAgenda] = useState<AgendaData>(emptyAgenda);
@@ -445,16 +471,18 @@ function AgendaApp() {
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!selectedPod) return;
     setLoginError('');
     setLoadError('');
     setIsLoading(true);
 
     try {
-      await callFunction<{ ok: boolean }>('login', password);
-      const loaded = await callFunction<{ agenda: AgendaData }>('agenda-load', password);
+      await callFunction<{ ok: boolean }>('login', password, selectedPod);
+      const loaded = await callFunction<{ agenda: AgendaData }>('agenda-load', password, selectedPod);
       const nextAgenda = loaded.agenda || emptyAgenda;
       setAgenda(nextAgenda);
       setDraft(structuredClone(nextAgenda));
+      setAuthenticatedPod(selectedPod);
       setAuthenticatedPassword(password);
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Could not sign in');
@@ -554,13 +582,17 @@ function AgendaApp() {
   };
 
   const saveAgenda = async () => {
+    if (!authenticatedPod) return;
     setSaveState('saving');
     setLoadError('');
 
     try {
-      const saved = await callFunction<{ agenda: AgendaData }>('agenda-save', authenticatedPassword, {
-        agenda: draft,
-      });
+      const saved = await callFunction<{ agenda: AgendaData }>(
+        'agenda-save',
+        authenticatedPassword,
+        authenticatedPod,
+        { agenda: draft },
+      );
       setAgenda(saved.agenda);
       setDraft(structuredClone(saved.agenda));
       setSaveState('saved');
@@ -576,7 +608,18 @@ function AgendaApp() {
     setLoadError('');
   };
 
-  if (!authenticatedPassword) {
+  const switchPod = () => {
+    setAuthenticatedPod(null);
+    setAuthenticatedPassword('');
+    setPassword('');
+    setAgenda(emptyAgenda);
+    setDraft(emptyAgenda);
+    setLoginError('');
+    setLoadError('');
+    setSaveState('idle');
+  };
+
+  if (!authenticatedPassword || !authenticatedPod) {
     return (
       <main className="min-h-screen bg-[#f4f1ea] px-4 py-12 text-gray-800">
         <section className="mx-auto max-w-md">
@@ -609,11 +652,28 @@ function AgendaApp() {
 
           <form onSubmit={login} className="space-y-4 border-2 border-gray-300 bg-[#fcfbf9] p-6 shadow-md paper-shadow">
             <label className="block">
+              <span className="text-sm font-semibold text-gray-700">{t.selectPod}</span>
+              <select
+                value={selectedPod}
+                onChange={(event) => {
+                  setSelectedPod(event.target.value as AgendaPod | '');
+                  setPassword('');
+                  setLoginError('');
+                }}
+                className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-base outline-none focus:border-gray-800"
+              >
+                <option value="">{t.choosePod}</option>
+                <option value="ir">IR POD</option>
+                <option value="cp">CP POD</option>
+              </select>
+            </label>
+            <label className="block">
               <span className="text-sm font-semibold text-gray-700">{t.password}</span>
               <input
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 type="password"
+                disabled={!selectedPod}
                 className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-base outline-none focus:border-gray-800"
                 autoComplete="current-password"
               />
@@ -621,7 +681,7 @@ function AgendaApp() {
             {loginError && <p className="text-sm font-semibold text-red-700">{loginError}</p>}
             <button
               type="submit"
-              disabled={isLoading || !password}
+              disabled={isLoading || !selectedPod || !password}
               className="w-full rounded border-2 border-gray-800 bg-gray-800 px-4 py-2 font-semibold text-white transition-colors hover:bg-white hover:text-gray-800 disabled:cursor-not-allowed disabled:border-gray-400 disabled:bg-gray-400 disabled:text-white"
             >
               {isLoading ? t.checking : t.openAgenda}
@@ -765,7 +825,10 @@ function AgendaApp() {
         <header className="border-b-2 border-gray-300 pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800">{t.appTitle}</h1>
+            <p className="typewriter text-sm font-bold uppercase tracking-widest text-gray-500">
+              {authenticatedPod.toUpperCase()} POD
+            </p>
+            <h1 className="mt-1 text-3xl font-bold text-gray-800">{t.appTitle}</h1>
             <p className="mt-1 text-sm italic text-gray-600">{t.subtitle}</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -800,6 +863,14 @@ function AgendaApp() {
                 ))}
               </select>
             </label>
+            <button
+              type="button"
+              onClick={switchPod}
+              className="inline-flex items-center gap-2 rounded border border-gray-400 bg-[#fcfbf9] px-3 py-2 text-sm font-semibold shadow-sm hover:bg-gray-100"
+            >
+              <Lock className="h-4 w-4" />
+              {t.switchPod}
+            </button>
             <button
               type="button"
               onClick={() => setIsHelpOpen((current) => !current)}

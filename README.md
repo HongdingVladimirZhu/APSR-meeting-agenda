@@ -1,6 +1,6 @@
 # Meeting Agenda
 
-A Netlify-compatible Vite React TypeScript site for a password-protected editable meeting agenda. The root page is the agenda editor, and the existing review ZIP generator is preserved at `/review-zip-generator`.
+A Netlify-compatible Vite React TypeScript site with two password-protected agenda portals. The root page lets users choose IR POD or CP POD, and the review ZIP generator is preserved at `/review-zip-generator`.
 
 ## Local Development
 
@@ -16,7 +16,7 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Set `AGENDA_PASSWORD` in `.env`, then run the app with Netlify Functions:
+Set both agenda passwords in `.env`, then run the app with Netlify Functions:
 
 ```bash
 npm run dev
@@ -32,7 +32,8 @@ You can still run the Vite-only frontend with `npm run vite`, but login and pers
 
 ## Required Environment Variables
 
-- `AGENDA_PASSWORD`: the single shared password used for both viewing and editing.
+- `AGENDA_PASSWORD`: the shared password for IR POD. This retains compatibility with the original portal.
+- `CP_AGENDA_PASSWORD`: the separate shared password for CP POD.
 
 Passwords are checked only inside Netlify Functions and are not exposed in frontend code.
 
@@ -44,10 +45,10 @@ Passwords are checked only inside Netlify Functions and are not exposed in front
    - Build command: `npm run build`
    - Publish directory: `dist`
    - Functions directory: `netlify/functions`
-4. In Netlify, add `AGENDA_PASSWORD` under Site configuration > Environment variables.
+4. In Netlify, add both `AGENDA_PASSWORD` and `CP_AGENDA_PASSWORD` under Site configuration > Environment variables.
 5. Deploy the site.
 
-Agenda data is stored in Netlify Blobs under the `meeting-agenda` store. Meetings and manuscripts are soft-deleted with `deleted: true` so they remain in the stored JSON.
+IR POD keeps using the existing `meeting-agenda` Netlify Blobs store, so previously saved data remains available. CP POD uses the separate `meeting-agenda-cp` store and starts empty. Meetings and manuscripts are soft-deleted with `deleted: true` so they remain in the stored JSON.
 
 ## Build
 

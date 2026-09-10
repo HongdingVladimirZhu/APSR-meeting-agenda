@@ -23,6 +23,8 @@ export type AgendaData = {
   meetings: Meeting[];
 };
 
+export type AgendaPod = 'ir' | 'cp';
+
 export const agendaKey = 'agenda.json';
 
 export const jsonResponse = (statusCode: number, body: unknown) => ({
@@ -43,12 +45,24 @@ export const readJsonBody = (body: string | null) => {
 export const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'Unknown error';
 
-export const validatePassword = (password: unknown) => {
-  const expectedPassword = process.env.AGENDA_PASSWORD;
+export const parseAgendaPod = (value: unknown): AgendaPod | null => {
+  // Defaulting omitted values to IR keeps older clients compatible.
+  if (value === undefined || value === null || value === '' || value === 'ir') return 'ir';
+  if (value === 'cp') return 'cp';
+  return null;
+};
+
+export const getPasswordVariableName = (pod: AgendaPod) =>
+  pod === 'cp' ? 'CP_AGENDA_PASSWORD' : 'AGENDA_PASSWORD';
+
+export const validatePassword = (password: unknown, pod: AgendaPod) => {
+  const expectedPassword =
+    pod === 'cp' ? process.env.CP_AGENDA_PASSWORD : process.env.AGENDA_PASSWORD;
   return Boolean(expectedPassword && typeof password === 'string' && password === expectedPassword);
 };
 
-export const getAgendaStore = () => getStore('meeting-agenda');
+export const getAgendaStore = (pod: AgendaPod) =>
+  getStore(pod === 'cp' ? 'meeting-agenda-cp' : 'meeting-agenda');
 
 export const defaultAgenda: AgendaData = { meetings: [] };
 
@@ -59,8 +73,8 @@ export const connectBlobs = (event: HandlerEvent) => {
   }
 };
 
-export const loadAgenda = async (): Promise<AgendaData> => {
-  const store = getAgendaStore();
+export const loadAgenda = async (pod: AgendaPod): Promise<AgendaData> => {
+  const store = getAgendaStore(pod);
   const agenda = await store.get(agendaKey, { type: 'json' });
   if (!agenda || typeof agenda !== 'object' || !Array.isArray((agenda as AgendaData).meetings)) {
     return defaultAgenda;
@@ -68,8 +82,8 @@ export const loadAgenda = async (): Promise<AgendaData> => {
   return agenda as AgendaData;
 };
 
-export const saveAgenda = async (agenda: AgendaData) => {
-  const store = getAgendaStore();
+export const saveAgenda = async (pod: AgendaPod, agenda: AgendaData) => {
+  const store = getAgendaStore(pod);
   await store.setJSON(agendaKey, agenda);
 };
 
