@@ -219,6 +219,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: 'Edit either time; both stay synchronized.',
     manuscript: 'Manuscript',
     delete: 'Delete',
+    deleteManuscript: 'Delete manuscript',
     noManuscripts: 'No manuscripts yet.',
     titleOrId: 'Title or ID',
     titlePlaceholder: 'Manuscript title or ID',
@@ -259,6 +260,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: 'Edytuj dowolny czas; oba pozostaną zsynchronizowane.',
     manuscript: 'Manuskrypt',
     delete: 'Usuń',
+    deleteManuscript: 'Usuń manuskrypt',
     noManuscripts: 'Nie ma jeszcze manuskryptów.',
     titleOrId: 'Tytuł lub ID',
     titlePlaceholder: 'Tytuł lub ID manuskryptu',
@@ -299,6 +301,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: 'Edita cualquiera de las horas; ambas se sincronizan.',
     manuscript: 'Manuscrito',
     delete: 'Eliminar',
+    deleteManuscript: 'Eliminar manuscrito',
     noManuscripts: 'Aún no hay manuscritos.',
     titleOrId: 'Título o ID',
     titlePlaceholder: 'Título o ID del manuscrito',
@@ -339,6 +342,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: 'Edita qualsevol hora; totes dues es mantenen sincronitzades.',
     manuscript: 'Manuscrit',
     delete: 'Suprimeix',
+    deleteManuscript: 'Suprimeix el manuscrit',
     noManuscripts: 'Encara no hi ha manuscrits.',
     titleOrId: 'Títol o ID',
     titlePlaceholder: 'Títol o ID del manuscrit',
@@ -379,6 +383,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: 'Modifiez l’une des heures ; les deux restent synchronisées.',
     manuscript: 'Manuscrit',
     delete: 'Supprimer',
+    deleteManuscript: 'Supprimer le manuscrit',
     noManuscripts: 'Aucun manuscrit pour le moment.',
     titleOrId: 'Titre ou ID',
     titlePlaceholder: 'Titre ou ID du manuscrit',
@@ -419,6 +424,7 @@ const copy: Record<Language, Record<string, string>> = {
     timeZoneHint: '修改任一时间，两个时间会同步更新。',
     manuscript: '手稿',
     delete: '删除',
+    deleteManuscript: '删除手稿',
     noManuscripts: '还没有手稿。',
     titleOrId: '标题或编号',
     titlePlaceholder: '手稿标题或编号',
@@ -788,10 +794,12 @@ function AgendaApp() {
                       <button
                         type="button"
                         onClick={() => deleteManuscript(meeting.id, manuscript.id)}
+                        aria-label={t.deleteManuscript}
+                        title={t.deleteManuscript}
                         className="inline-flex items-center justify-center gap-2 rounded border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 sm:mt-7"
                       >
                         <Trash2 className="h-4 w-4" />
-                        {t.delete}
+                        {t.deleteManuscript}
                       </button>
                     </div>
                     <label className="mt-3 block">
